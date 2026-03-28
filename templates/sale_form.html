@@ -1,0 +1,292 @@
+{% extends "base.html" %}
+{% block title %}Record Sale – InvenTrak{% endblock %}
+{% block page_title %}Record Sale{% endblock %}
+{% block page_subtitle %}Process an outgoing stock transaction{% endblock %}
+
+{% block head %}
+<style>
+  .sale-layout { display: grid; grid-template-columns: 1fr 340px; gap: 24px; align-items: start; }
+  .summary-card { background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; position: sticky; top: 24px; }
+  .summary-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; color: var(--text-3); margin-bottom: 20px; }
+  .summary-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .summary-row:last-of-type { border-bottom: none; }
+  .summary-row .s-label { color: var(--text-2); }
+  .summary-row .s-value { font-weight: 600; color: var(--text); }
+  .summary-total { display: flex; justify-content: space-between; align-items: center; padding: 16px 0 0; margin-top: 8px; border-top: 2px solid var(--border-2); }
+  .summary-total .s-label { font-size: 15px; font-weight: 700; color: var(--text); }
+  .summary-total .s-value { font-family: var(--font-head); font-size: 26px; font-weight: 800; color: var(--green); }
+  .stock-meter-wrap { margin-top: 20px; }
+  .stock-meter-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--text-3); margin-bottom: 12px; }
+  .stock-bar-track { height: 10px; background: var(--bg-4); border-radius: 5px; overflow: hidden; margin-bottom: 8px; }
+  .stock-bar-fill { height: 100%; border-radius: 5px; transition: width 0.4s ease, background 0.4s ease; }
+  .stock-numbers { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-2); }
+  .stock-after-row { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; padding: 10px 12px; border-radius: var(--radius-sm); background: var(--bg-3); }
+  .stock-after-label { font-size: 13px; font-weight: 600; }
+  .stock-after-val { font-family: var(--font-head); font-size: 18px; font-weight: 800; }
+  .trigger-warn { margin-top: 14px; padding: 12px; border-radius: var(--radius-sm); font-size: 12px; line-height: 1.5; }
+  .form-section { margin-bottom: 24px; }
+  .form-section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.2px; color: var(--text-3); padding-bottom: 10px; border-bottom: 1px solid var(--border); margin-bottom: 18px; }
+  .qty-warning { display: none; align-items: center; gap: 8px; padding: 10px 14px; background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); border-radius: var(--radius-sm); color: var(--red); font-size: 13px; font-weight: 600; margin-top: 8px; }
+  .qty-warning.visible { display: flex; }
+  .fk-tags { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
+  .fk-tag { font-size: 11px; padding: 4px 10px; border-radius: 20px; background: var(--bg-4); color: var(--text-3); border: 1px solid var(--border-2); font-family: monospace; }
+  @media (max-width: 960px) { .sale-layout { grid-template-columns: 1fr; } .summary-card { position: static; } }
+</style>
+{% endblock %}
+
+{% block topbar_actions %}
+<a href="{{ url_for('sales') }}" class="btn btn-ghost">← Back to Sales</a>
+{% endblock %}
+
+{% block content %}
+<div class="sale-layout">
+
+  <!-- ── Left: Form ── -->
+  <div>
+    <div class="card" style="padding: 28px;">
+
+      <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:22px;">
+        <span style="display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:20px;font-size:12px;font-weight:600;background:rgba(249,115,22,0.1);border:1px solid rgba(249,115,22,0.25);color:var(--orange);">
+          ⚠ Trigger: before_sale_insert — blocks sale if stock is insufficient
+        </span>
+        <span style="display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:20px;font-size:12px;font-weight:600;background:rgba(34,197,94,0.1);border:1px solid rgba(34,197,94,0.25);color:var(--green);">
+          ⚡ Trigger: after_sale_insert — stock auto-decrements on save
+        </span>
+      </div>
+
+      <form method="POST" id="saleForm">
+
+        <!-- Product -->
+        <div class="form-section">
+          <div class="form-section-title">Product Selection</div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">Product <span class="required">*</span></label>
+              <select name="product_id" class="form-input" id="productSelect" required onchange="onProductChange()">
+                <option value="">— Select a product —</option>
+                {% for p in products %}
+                <option value="{{ p.product_id }}"
+                        data-price="{{ p.price }}"
+                        data-stock="{{ p.stock_quantity }}"
+                        data-name="{{ p.name }}"
+                        {% if p.stock_quantity == 0 %}disabled style="color:var(--red)"{% endif %}>
+                  {{ p.name }}{% if p.stock_quantity == 0 %} [OUT OF STOCK]{% else %} (Stock: {{ p.stock_quantity }}){% endif %}
+                </option>
+                {% endfor %}
+              </select>
+              <span class="form-hint" id="productHint">Select a product to check available stock</span>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Customer</label>
+              <input type="text" name="customer" class="form-input" placeholder="Walk-in" value="Walk-in"
+                     id="customerInput" oninput="updateSummary()">
+              <span class="form-hint">Customer name or company</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Quantity & Price -->
+        <div class="form-section">
+          <div class="form-section-title">Quantity & Pricing</div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">Quantity <span class="required">*</span></label>
+              <input type="number" name="quantity" id="qtyInput" class="form-input"
+                     required min="1" placeholder="0" oninput="onQtyChange()">
+              <div class="qty-warning" id="qtyWarning">
+                ✕ Exceeds available stock — trigger will block this sale
+              </div>
+              <span class="form-hint">CHECK constraint: quantity &gt; 0</span>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Sale Price ($) <span class="required">*</span></label>
+              <input type="number" name="sale_price" id="salePriceInput" class="form-input"
+                     required min="0" step="0.01" placeholder="0.00" oninput="recalculate()">
+              <span class="form-hint">Auto-filled from product price</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Date & Notes -->
+        <div class="form-section">
+          <div class="form-section-title">Details</div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">Sale Date <span class="required">*</span></label>
+              <input type="date" name="sale_date" class="form-input" required value="{{ today }}">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Notes</label>
+              <input type="text" name="notes" class="form-input" placeholder="Optional order notes…">
+            </div>
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" class="btn btn-accent" style="padding: 11px 30px; font-size: 14px;" id="submitBtn">
+            ↑ &nbsp;Record Sale
+          </button>
+          <a href="{{ url_for('sales') }}" class="btn btn-ghost">Cancel</a>
+        </div>
+
+        <div class="fk-tags" style="margin-top:20px;">
+          <span class="fk-tag">PK: sale_id AUTO_INCREMENT</span>
+          <span class="fk-tag">FK: product_id → Product</span>
+          <span class="fk-tag">CHECK: quantity > 0</span>
+          <span class="fk-tag">TRIGGER: prevent oversell</span>
+        </div>
+
+      </form>
+    </div>
+  </div>
+
+  <!-- ── Right: Live Summary ── -->
+  <div class="summary-card">
+    <div class="summary-title">Sale Summary</div>
+
+    <div class="summary-row">
+      <span class="s-label">Product</span>
+      <span class="s-value" id="sumProduct" style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">—</span>
+    </div>
+    <div class="summary-row">
+      <span class="s-label">Customer</span>
+      <span class="s-value" id="sumCustomer">Walk-in</span>
+    </div>
+    <div class="summary-row">
+      <span class="s-label">Quantity</span>
+      <span class="s-value" id="sumQty">0 units</span>
+    </div>
+    <div class="summary-row">
+      <span class="s-label">Unit Price</span>
+      <span class="s-value" id="sumUnitPrice">$0.00</span>
+    </div>
+
+    <div class="summary-total">
+      <span class="s-label">Revenue</span>
+      <span class="s-value" id="sumRevenue">$0.00</span>
+    </div>
+
+    <!-- Stock Meter -->
+    <div class="stock-meter-wrap">
+      <div class="stock-meter-label">Stock Level After Sale</div>
+      <div class="stock-bar-track">
+        <div class="stock-bar-fill" id="stockBarFill" style="width:0%; background:var(--green);"></div>
+      </div>
+      <div class="stock-numbers">
+        <span>0</span>
+        <span id="stockMax">—</span>
+      </div>
+      <div class="stock-after-row">
+        <span class="stock-after-label">Remaining Stock</span>
+        <span class="stock-after-val" id="stockAfterVal" style="color:var(--green);">—</span>
+      </div>
+    </div>
+
+    <!-- Trigger warning -->
+    <div class="trigger-warn" id="triggerWarn"
+         style="background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.25);color:var(--red);display:none;">
+      <strong style="display:block;margin-bottom:4px;">🚫 Trigger will BLOCK this sale</strong>
+      before_sale_insert will raise SQLSTATE 45000:<br>
+      "Insufficient stock: cannot process sale"
+    </div>
+
+    <div class="trigger-warn" id="triggerOk"
+         style="background:rgba(34,197,94,0.07);border:1px solid rgba(34,197,94,0.2);color:var(--green);">
+      <strong style="display:block;margin-bottom:4px;">✓ Sale can proceed</strong>
+      after_sale_insert will automatically subtract quantity from stock and log the movement.
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  let currentStock = 0;
+  let maxStock = 0;
+
+  function onProductChange() {
+    const sel = document.getElementById('productSelect');
+    const opt = sel.options[sel.selectedIndex];
+    const name  = opt.dataset.name || '';
+    const price = parseFloat(opt.dataset.price) || 0;
+    currentStock = parseInt(opt.dataset.stock) || 0;
+    maxStock = currentStock;
+
+    document.getElementById('sumProduct').textContent =
+      name.length > 22 ? name.slice(0,22) + '…' : (name || '—');
+    document.getElementById('stockMax').textContent = maxStock;
+    document.getElementById('productHint').textContent =
+      opt.value ? `Available stock: ${currentStock} units` : 'Select a product to check available stock';
+
+    if (price > 0) document.getElementById('salePriceInput').value = price.toFixed(2);
+    onQtyChange();
+  }
+
+  function onQtyChange() {
+    const qty = parseInt(document.getElementById('qtyInput').value) || 0;
+    const warn = document.getElementById('qtyWarning');
+    const sel  = document.getElementById('productSelect');
+
+    if (sel.value && qty > currentStock) {
+      warn.classList.add('visible');
+    } else {
+      warn.classList.remove('visible');
+    }
+    recalculate();
+  }
+
+  function recalculate() {
+    const qty   = parseInt(document.getElementById('qtyInput').value)        || 0;
+    const price = parseFloat(document.getElementById('salePriceInput').value) || 0;
+    const cust  = document.getElementById('customerInput').value || 'Walk-in';
+    const total = qty * price;
+
+    document.getElementById('sumQty').textContent       = qty + ' units';
+    document.getElementById('sumUnitPrice').textContent  = '$' + price.toFixed(2);
+    document.getElementById('sumRevenue').textContent    = '$' + total.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+    document.getElementById('sumCustomer').textContent   = cust;
+
+    const pSel = document.getElementById('productSelect');
+    const triggerWarn = document.getElementById('triggerWarn');
+    const triggerOk   = document.getElementById('triggerOk');
+
+    if (pSel.value) {
+      const remaining = currentStock - qty;
+      const pct = maxStock > 0 ? Math.max(0, Math.min(100, (remaining / maxStock) * 100)) : 0;
+      const fill = document.getElementById('stockBarFill');
+
+      document.getElementById('stockAfterVal').textContent = remaining >= 0 ? remaining : '—';
+      fill.style.width = pct + '%';
+
+      if (remaining < 0) {
+        fill.style.background = 'var(--red)';
+        document.getElementById('stockAfterVal').style.color = 'var(--red)';
+        triggerWarn.style.display = 'block';
+        triggerOk.style.display   = 'none';
+      } else if (remaining < 5) {
+        fill.style.background = 'var(--orange)';
+        document.getElementById('stockAfterVal').style.color = 'var(--orange)';
+        triggerWarn.style.display = 'none';
+        triggerOk.style.display   = 'block';
+      } else {
+        fill.style.background = 'var(--green)';
+        document.getElementById('stockAfterVal').style.color = 'var(--green)';
+        triggerWarn.style.display = 'none';
+        triggerOk.style.display   = 'block';
+      }
+    } else {
+      triggerWarn.style.display = 'none';
+      triggerOk.style.display   = 'block';
+    }
+  }
+
+  function updateSummary() {
+    document.getElementById('sumCustomer').textContent =
+      document.getElementById('customerInput').value || 'Walk-in';
+  }
+
+  // Init
+  recalculate();
+</script>
+{% endblock %}

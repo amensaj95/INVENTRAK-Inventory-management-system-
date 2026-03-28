@@ -1,0 +1,210 @@
+{% extends "base.html" %}
+{% block title %}Purchases – InvenTrak{% endblock %}
+{% block page_title %}Purchases{% endblock %}
+{% block page_subtitle %}All incoming stock records — linked to Product & Supplier via foreign keys{% endblock %}
+
+{% block head %}
+<style>
+  .purchase-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 22px; }
+  .p-stat { background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px; border-left: 3px solid; }
+  .p-stat-val   { font-family: var(--font-head); font-size: 22px; font-weight: 800; }
+  .p-stat-label { font-size: 12px; color: var(--text-2); margin-top: 3px; }
+  .filter-panel { background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 20px; }
+  .filter-panel-header { padding: 14px 20px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; }
+  .filter-panel-header:hover { background: rgba(255,255,255,0.02); }
+  .filter-panel-body { padding: 0 20px 20px; border-top: 1px solid var(--border); }
+  .filter-row { display: grid; grid-template-columns: repeat(4, 1fr) auto; gap: 14px; align-items: flex-end; padding-top: 16px; }
+  .total-cost-cell { font-weight: 700; color: var(--blue); }
+  .notes-cell { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-3); font-size: 12px; }
+  .supplier-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 20px; background: rgba(168,85,247,0.1); color: var(--purple); border: 1px solid rgba(168,85,247,0.2); font-size: 12px; font-weight: 600; }
+  .fk-indicator { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; font-family: monospace; color: var(--text-3); margin-top: 4px; }
+</style>
+{% endblock %}
+
+{% block topbar_actions %}
+<a href="{{ url_for('add_purchase') }}" class="btn btn-primary">+ Record Purchase</a>
+{% endblock %}
+
+{% block content %}
+
+<!-- Stats -->
+{% set total_cost = purchases | sum(attribute='total_cost') | float %}
+{% set total_units = purchases | sum(attribute='quantity') | int %}
+{% set unique_products  = purchases | map(attribute='product_name')  | unique | list | length %}
+{% set unique_suppliers = purchases | map(attribute='supplier_name') | unique | list | length %}
+
+<div class="purchase-stats">
+  <div class="p-stat" style="border-left-color:var(--blue)">
+    <div class="p-stat-val" style="color:var(--blue)">{{ purchases|length }}</div>
+    <div class="p-stat-label">Total Purchases</div>
+  </div>
+  <div class="p-stat" style="border-left-color:var(--green)">
+    <div class="p-stat-val" style="color:var(--green)">${{ "%.2f"|format(total_cost) }}</div>
+    <div class="p-stat-label">Total Spend</div>
+  </div>
+  <div class="p-stat" style="border-left-color:var(--purple)">
+    <div class="p-stat-val" style="color:var(--purple)">{{ total_units }}</div>
+    <div class="p-stat-label">Total Units Received</div>
+  </div>
+  <div class="p-stat" style="border-left-color:var(--teal)">
+    <div class="p-stat-val" style="color:var(--teal)">{{ unique_suppliers }}</div>
+    <div class="p-stat-label">Unique Suppliers</div>
+  </div>
+</div>
+
+<!-- Filter Panel -->
+<div class="filter-panel">
+  <div class="filter-panel-header" onclick="this.nextElementSibling.classList.toggle('hidden')" id="filterToggleBtn">
+    <div style="display:flex; align-items:center; gap:10px;">
+      <span style="font-weight:700; font-size:14px;">🔍 Filter Purchases</span>
+      {% if filters.get('date_from') or filters.get('date_to') or filters.get('supplier_id') or filters.get('product_id') %}
+      <span style="background:var(--blue);color:white;font-size:11px;padding:2px 8px;border-radius:20px;font-weight:600;">Filters Active</span>
+      {% endif %}
+    </div>
+    <span style="color:var(--text-3);" id="filterArrow">▼</span>
+  </div>
+  <div class="filter-panel-body" id="filterPanelBody">
+    <form method="GET" action="{{ url_for('purchases') }}">
+      <div class="filter-row">
+        <div class="form-group">
+          <label class="filter-label">From Date</label>
+          <input type="date" name="date_from" class="form-input" value="{{ filters.get('date_from','') }}">
+        </div>
+        <div class="form-group">
+          <label class="filter-label">To Date</label>
+          <input type="date" name="date_to" class="form-input" value="{{ filters.get('date_to','') }}">
+        </div>
+        <div class="form-group">
+          <label class="filter-label">Supplier</label>
+          <select name="supplier_id" class="form-input">
+            <option value="">All Suppliers</option>
+            {% for s in suppliers %}
+            <option value="{{ s.supplier_id }}" {% if filters.get('supplier_id')|string == s.supplier_id|string %}selected{% endif %}>
+              {{ s.name }}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="filter-label">Product</label>
+          <select name="product_id" class="form-input">
+            <option value="">All Products</option>
+            {% for p in products %}
+            <option value="{{ p.product_id }}" {% if filters.get('product_id')|string == p.product_id|string %}selected{% endif %}>
+              {{ p.name }}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group" style="display:flex; gap:8px; align-items:flex-end;">
+          <button type="submit" class="btn btn-primary">Apply</button>
+          <a href="{{ url_for('purchases') }}" class="btn btn-ghost">Clear</a>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Purchases Table -->
+<div class="card">
+  <div class="card-header">
+    <div>
+      <h3 class="card-title">Purchase Records <span class="badge">{{ purchases|length }}</span></h3>
+      <div class="fk-indicator">
+        <span style="color:var(--blue)">FK</span> product_id → Product &nbsp;·&nbsp;
+        <span style="color:var(--purple)">FK</span> supplier_id → Supplier &nbsp;·&nbsp;
+        <span style="color:var(--orange)">CHECK</span> quantity &gt; 0
+      </div>
+    </div>
+    {% if purchases %}
+    <div style="text-align:right;">
+      <div style="font-size:20px; font-weight:800; color:var(--blue); font-family:var(--font-head);">
+        ${{ "%.2f"|format(total_cost) }}
+      </div>
+      <div style="font-size:11px; color:var(--text-3);">Total Spend</div>
+    </div>
+    {% endif %}
+  </div>
+  <div class="table-responsive">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Product</th>
+          <th>Supplier</th>
+          <th>Quantity</th>
+          <th>Unit Cost</th>
+          <th>Total Cost</th>
+          <th>Date</th>
+          <th>Notes</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in purchases %}
+        <tr>
+          <td>
+            <span style="font-family:monospace; font-size:12px; color:var(--text-3);">#{{ "%04d"|format(p.purchase_id) }}</span>
+          </td>
+          <td>
+            <div class="td-name">{{ p.product_name }}</div>
+            <div style="font-size:11px; color:var(--text-3); font-family:monospace;">pid:{{ p.product_id }}</div>
+          </td>
+          <td>
+            <span class="supplier-chip">◎ {{ p.supplier_name }}</span>
+          </td>
+          <td>
+            <span class="qty-badge">+{{ p.quantity }}</span>
+          </td>
+          <td class="text-muted">${{ "%.2f"|format(p.unit_cost|float) }}</td>
+          <td class="total-cost-cell">${{ "%.2f"|format(p.total_cost|float) }}</td>
+          <td>
+            <div style="font-weight:500;">{{ p.purchase_date }}</div>
+          </td>
+          <td class="notes-cell" title="{{ p.notes or '' }}">{{ p.notes or '—' }}</td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="8" class="empty-state">
+            No purchase records found.
+            {% if filters.get('date_from') or filters.get('date_to') or filters.get('supplier_id') or filters.get('product_id') %}
+            Try clearing your filters.
+            {% else %}
+            <a href="{{ url_for('add_purchase') }}" style="color:var(--blue)">Record your first purchase →</a>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      {% if purchases %}
+      <tfoot>
+        <tr style="background:var(--bg-3);">
+          <td colspan="3" style="padding:12px 16px; font-weight:700; color:var(--text-2);">Totals</td>
+          <td style="padding:12px 16px;"><span class="qty-badge">+{{ total_units }}</span></td>
+          <td style="padding:12px 16px; color:var(--text-2);">—</td>
+          <td style="padding:12px 16px; font-weight:800; color:var(--blue); font-size:15px;">${{ "%.2f"|format(total_cost) }}</td>
+          <td colspan="2" style="padding:12px 16px;"></td>
+        </tr>
+      </tfoot>
+      {% endif %}
+    </table>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Auto-collapse filter if no active filters
+  const hasFilters = {{ 'true' if (filters.get('date_from') or filters.get('date_to') or filters.get('supplier_id') or filters.get('product_id')) else 'false' }};
+  if (!hasFilters) {
+    document.getElementById('filterPanelBody').classList.add('hidden');
+  }
+  document.getElementById('filterToggleBtn').addEventListener('click', function() {
+    const arrow = document.getElementById('filterArrow');
+    arrow.textContent = document.getElementById('filterPanelBody').classList.contains('hidden') ? '▼' : '▶';
+  });
+</script>
+<style>
+  .hidden { display: none !important; }
+</style>
+{% endblock %}

@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}InvenTrak{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    {% block head %}{% endblock %}
+</head>
+<body>
+
+<!-- ── Sidebar Navigation ─────────────────────────── -->
+<aside class="sidebar">
+    <div class="sidebar-logo">
+        <div class="logo-icon">▣</div>
+        <span class="logo-text">InvenTrak</span>
+    </div>
+
+    <nav class="sidebar-nav">
+        <div class="nav-section-label">Overview</div>
+        <a href="{{ url_for('dashboard') }}" class="nav-link {% if request.endpoint == 'dashboard' %}active{% endif %}">
+            <span class="nav-icon">◈</span> Dashboard
+        </a>
+        <a href="{{ url_for('inventory') }}" class="nav-link {% if request.endpoint == 'inventory' %}active{% endif %}">
+            <span class="nav-icon">◫</span> Inventory
+        </a>
+
+        <div class="nav-section-label">Manage</div>
+        <a href="{{ url_for('products') }}" class="nav-link {% if 'product' in request.endpoint %}active{% endif %}">
+            <span class="nav-icon">⬡</span> Products
+        </a>
+        <a href="{{ url_for('suppliers') }}" class="nav-link {% if 'supplier' in request.endpoint %}active{% endif %}">
+            <span class="nav-icon">◎</span> Suppliers
+        </a>
+        <a href="{{ url_for('purchases') }}" class="nav-link {% if 'purchase' in request.endpoint %}active{% endif %}">
+            <span class="nav-icon">↓</span> Purchases
+        </a>
+        <a href="{{ url_for('sales') }}" class="nav-link {% if 'sale' in request.endpoint %}active{% endif %}">
+            <span class="nav-icon">↑</span> Sales
+        </a>
+
+        <div class="nav-section-label">Analyze</div>
+        <a href="{{ url_for('reports') }}" class="nav-link {% if request.endpoint == 'reports' %}active{% endif %}">
+            <span class="nav-icon">▦</span> Reports
+        </a>
+    </nav>
+
+    <div class="sidebar-footer">
+        <div class="sidebar-footer-text">Inventory Control System</div>
+        <div class="sidebar-footer-sub">v1.0 · MySQL + Flask</div>
+    </div>
+</aside>
+
+<!-- ── Main Content ───────────────────────────────── -->
+<main class="main-content">
+    <div class="topbar">
+        <div class="topbar-left">
+            <h1 class="page-title">{% block page_title %}Dashboard{% endblock %}</h1>
+            <p class="page-subtitle">{% block page_subtitle %}{% endblock %}</p>
+        </div>
+        <div class="topbar-right">
+            {% block topbar_actions %}{% endblock %}
+        </div>
+    </div>
+
+    <!-- Flash Messages -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            <div class="flash-messages">
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }}">
+                        <span class="alert-icon">{% if category == 'success' %}✓{% else %}✕{% endif %}</span>
+                        {{ message }}
+                        <button class="alert-close" onclick="this.parentElement.remove()">×</button>
+                    </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+    {% endwith %}
+
+    <div class="page-content">
+        {% block content %}{% endblock %}
+    </div>
+</main>
+
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

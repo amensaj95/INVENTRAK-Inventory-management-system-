@@ -1,0 +1,234 @@
+{% extends "base.html" %}
+{% block title %}Record Purchase – InvenTrak{% endblock %}
+{% block page_title %}Record Purchase{% endblock %}
+{% block page_subtitle %}Log incoming stock from a supplier{% endblock %}
+
+{% block head %}
+<style>
+  .purchase-layout { display: grid; grid-template-columns: 1fr 340px; gap: 24px; align-items: start; }
+  .summary-card { background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; position: sticky; top: 24px; }
+  .summary-title { font-family: var(--font-head); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; color: var(--text-3); margin-bottom: 20px; }
+  .summary-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .summary-row:last-of-type { border-bottom: none; }
+  .summary-row .s-label { color: var(--text-2); }
+  .summary-row .s-value { font-weight: 600; color: var(--text); text-align: right; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .summary-total { display: flex; justify-content: space-between; align-items: center; padding: 16px 0 0; margin-top: 8px; border-top: 2px solid var(--border-2); }
+  .summary-total .s-label { font-size: 15px; font-weight: 700; color: var(--text); }
+  .summary-total .s-value { font-family: var(--font-head); font-size: 26px; font-weight: 800; color: var(--blue); }
+  .stock-projection { margin-top: 20px; padding: 16px; background: var(--bg-3); border-radius: var(--radius-sm); border: 1px solid var(--border); }
+  .proj-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--text-3); margin-bottom: 12px; }
+  .proj-row { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 8px; }
+  .proj-row:last-child { margin-bottom: 0; padding-top: 8px; border-top: 1px solid var(--border); font-weight: 700; }
+  .proj-after { color: var(--green); font-weight: 800; font-size: 15px; }
+  .info-pill { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 20px; font-size: 12px; font-weight: 600; margin-bottom: 20px; }
+  .info-pill.green { background: rgba(34,197,94,0.1); border: 1px solid rgba(34,197,94,0.25); color: var(--green); }
+  .info-pill.blue  { background: rgba(59,130,246,0.1); border: 1px solid rgba(59,130,246,0.25); color: var(--blue); }
+  .form-section { margin-bottom: 24px; }
+  .form-section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.2px; color: var(--text-3); padding-bottom: 10px; border-bottom: 1px solid var(--border); margin-bottom: 18px; }
+  .fk-tags { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
+  .fk-tag { font-size: 11px; padding: 4px 10px; border-radius: 20px; background: var(--bg-4); color: var(--text-3); border: 1px solid var(--border-2); font-family: monospace; }
+  @media (max-width: 960px) { .purchase-layout { grid-template-columns: 1fr; } .summary-card { position: static; } }
+</style>
+{% endblock %}
+
+{% block topbar_actions %}
+<a href="{{ url_for('purchases') }}" class="btn btn-ghost">← Back to Purchases</a>
+{% endblock %}
+
+{% block content %}
+<div class="purchase-layout">
+
+  <!-- ── Left: Form ── -->
+  <div>
+    <div class="card" style="padding: 28px;">
+
+      <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:22px;">
+        <span class="info-pill green">⚡ Trigger: after_purchase_insert — stock auto-updates on save</span>
+      </div>
+
+      <form method="POST" id="purchaseForm">
+
+        <!-- Product & Supplier -->
+        <div class="form-section">
+          <div class="form-section-title">Product & Supplier</div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">Product <span class="required">*</span></label>
+              <select name="product_id" class="form-input" id="productSelect" required onchange="onProductChange()">
+                <option value="">— Select a product —</option>
+                {% for p in products %}
+                <option value="{{ p.product_id }}"
+                        data-price="{{ p.price }}"
+                        data-stock="{{ p.stock_quantity }}"
+                        data-name="{{ p.name }}">
+                  {{ p.name }}
+                </option>
+                {% endfor %}
+              </select>
+              <span class="form-hint" id="currentStockHint">Select a product to see current stock</span>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Supplier <span class="required">*</span></label>
+              <select name="supplier_id" class="form-input" id="supplierSelect" required onchange="onSupplierChange()">
+                <option value="">— Select a supplier —</option>
+                {% for s in suppliers %}
+                <option value="{{ s.supplier_id }}" data-name="{{ s.name }}">{{ s.name }}</option>
+                {% endfor %}
+              </select>
+              <span class="form-hint">Foreign key → Supplier table</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Quantity & Cost -->
+        <div class="form-section">
+          <div class="form-section-title">Quantity & Pricing</div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">Quantity <span class="required">*</span></label>
+              <input type="number" name="quantity" id="qtyInput" class="form-input"
+                     required min="1" placeholder="0" oninput="recalculate()">
+              <span class="form-hint">CHECK constraint: quantity &gt; 0</span>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Unit Cost ($) <span class="required">*</span></label>
+              <input type="number" name="unit_cost" id="unitCostInput" class="form-input"
+                     required min="0" step="0.01" placeholder="0.00" oninput="recalculate()">
+              <span class="form-hint">Auto-filled from product price</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Date & Notes -->
+        <div class="form-section">
+          <div class="form-section-title">Details</div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">Purchase Date <span class="required">*</span></label>
+              <input type="date" name="purchase_date" class="form-input" required value="{{ today }}">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Notes</label>
+              <input type="text" name="notes" class="form-input" placeholder="e.g. Q2 bulk order, urgent restock…">
+            </div>
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary" style="padding: 11px 30px; font-size: 14px;">
+            ↓ &nbsp;Record Purchase
+          </button>
+          <a href="{{ url_for('purchases') }}" class="btn btn-ghost">Cancel</a>
+        </div>
+
+        <div class="fk-tags" style="margin-top:20px;">
+          <span class="fk-tag">PK: purchase_id AUTO_INCREMENT</span>
+          <span class="fk-tag">FK: product_id → Product</span>
+          <span class="fk-tag">FK: supplier_id → Supplier</span>
+          <span class="fk-tag">CHECK: quantity > 0</span>
+        </div>
+
+      </form>
+    </div>
+  </div>
+
+  <!-- ── Right: Live Summary ── -->
+  <div class="summary-card">
+    <div class="summary-title">Order Summary</div>
+
+    <div class="summary-row">
+      <span class="s-label">Product</span>
+      <span class="s-value" id="sumProduct">—</span>
+    </div>
+    <div class="summary-row">
+      <span class="s-label">Supplier</span>
+      <span class="s-value" id="sumSupplier">—</span>
+    </div>
+    <div class="summary-row">
+      <span class="s-label">Quantity</span>
+      <span class="s-value" id="sumQty">0 units</span>
+    </div>
+    <div class="summary-row">
+      <span class="s-label">Unit Cost</span>
+      <span class="s-value" id="sumUnitCost">$0.00</span>
+    </div>
+
+    <div class="summary-total">
+      <span class="s-label">Total Cost</span>
+      <span class="s-value" id="sumTotal">$0.00</span>
+    </div>
+
+    <div class="stock-projection">
+      <div class="proj-title">⚡ Stock Projection</div>
+      <div class="proj-row">
+        <span style="color:var(--text-2)">Current Stock</span>
+        <span id="projBefore" style="font-weight:600">—</span>
+      </div>
+      <div class="proj-row">
+        <span style="color:var(--text-2)">Incoming Qty</span>
+        <span id="projAdding" style="color:var(--blue); font-weight:700">+0</span>
+      </div>
+      <div class="proj-row">
+        <span>Stock After Save</span>
+        <span class="proj-after" id="projAfter">—</span>
+      </div>
+    </div>
+
+    <div style="margin-top:16px; padding:12px; background:rgba(59,130,246,0.07); border:1px solid rgba(59,130,246,0.18); border-radius:var(--radius-sm); font-size:11.5px; color:var(--blue); line-height:1.6;">
+      <strong style="display:block; margin-bottom:4px;">🔗 Relational Integrity</strong>
+      product_id references Product(product_id)<br>
+      supplier_id references Supplier(supplier_id)<br>
+      Both use ON DELETE RESTRICT
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  let currentStock = 0;
+
+  function onProductChange() {
+    const sel = document.getElementById('productSelect');
+    const opt = sel.options[sel.selectedIndex];
+    const name  = opt.dataset.name || '';
+    const price = parseFloat(opt.dataset.price) || 0;
+    currentStock = parseInt(opt.dataset.stock) || 0;
+
+    document.getElementById('sumProduct').textContent =
+      name.length > 22 ? name.slice(0, 22) + '…' : (name || '—');
+    document.getElementById('currentStockHint').textContent =
+      opt.value ? `Current stock: ${currentStock} units` : 'Select a product to see current stock';
+
+    if (price > 0) document.getElementById('unitCostInput').value = price.toFixed(2);
+    recalculate();
+  }
+
+  function onSupplierChange() {
+    const sel = document.getElementById('supplierSelect');
+    const opt = sel.options[sel.selectedIndex];
+    document.getElementById('sumSupplier').textContent = opt.dataset.name || '—';
+  }
+
+  function recalculate() {
+    const qty      = parseInt(document.getElementById('qtyInput').value)       || 0;
+    const unitCost = parseFloat(document.getElementById('unitCostInput').value) || 0;
+    const total    = qty * unitCost;
+
+    document.getElementById('sumQty').textContent     = qty + ' units';
+    document.getElementById('sumUnitCost').textContent = '$' + unitCost.toFixed(2);
+    document.getElementById('sumTotal').textContent    = '$' + total.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+    document.getElementById('projAdding').textContent  = '+' + qty;
+
+    const pSel = document.getElementById('productSelect');
+    if (pSel.value) {
+      document.getElementById('projBefore').textContent = currentStock;
+      document.getElementById('projAfter').textContent  = currentStock + qty;
+    } else {
+      document.getElementById('projBefore').textContent = '—';
+      document.getElementById('projAfter').textContent  = '—';
+    }
+  }
+</script>
+{% endblock %}

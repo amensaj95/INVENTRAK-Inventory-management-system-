@@ -1,0 +1,292 @@
+{% extends "base.html" %}
+{% block title %}Inventory – InvenTrak{% endblock %}
+{% block page_title %}Inventory{% endblock %}
+{% block page_subtitle %}Live stock levels from the InventorySummary & LowStockProducts views{% endblock %}
+
+{% block head %}
+<style>
+  .inv-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+  .inv-stat { background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px 20px; }
+  .inv-stat-value { font-family: var(--font-head); font-size: 28px; font-weight: 800; }
+  .inv-stat-label { font-size: 12px; color: var(--text-2); margin-top: 4px; font-weight: 500; }
+  .inv-stat-sub   { font-size: 11px; color: var(--text-3); margin-top: 2px; }
+
+  .low-stock-banner { display: flex; align-items: center; gap: 14px; padding: 14px 20px; background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.25); border-radius: var(--radius); margin-bottom: 20px; }
+  .low-stock-banner .banner-icon { font-size: 22px; }
+  .low-stock-banner .banner-text strong { color: var(--red); font-size: 14px; }
+  .low-stock-banner .banner-text p { font-size: 12.5px; color: var(--text-2); margin-top: 2px; }
+  .banner-actions { margin-left: auto; display: flex; gap: 8px; }
+
+  .view-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: 700; font-family: monospace; background: rgba(99,102,241,0.12); color: var(--indigo); border: 1px solid rgba(99,102,241,0.25); margin-left: 8px; }
+
+  .stock-bar-cell { min-width: 120px; }
+  .mini-bar-track { height: 6px; background: var(--bg-4); border-radius: 3px; overflow: hidden; }
+  .mini-bar-fill  { height: 100%; border-radius: 3px; }
+
+  .flow-cell { white-space: nowrap; }
+  .flow-in  { color: var(--blue);  font-weight: 600; }
+  .flow-out { color: var(--green); font-weight: 600; }
+
+  .filter-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px; }
+  .filter-tab { padding: 7px 16px; border-radius: 20px; font-size: 13px; font-weight: 600; cursor: pointer; border: 1px solid var(--border-2); background: var(--bg-3); color: var(--text-2); transition: all 0.15s; }
+  .filter-tab:hover { background: var(--bg-4); color: var(--text); }
+  .filter-tab.active { background: var(--blue); color: white; border-color: var(--blue); }
+  .filter-tab.red    { border-color: rgba(239,68,68,0.4); color: var(--red); }
+  .filter-tab.red.active { background: var(--red); color: white; border-color: var(--red); }
+  .filter-tab.orange { border-color: rgba(249,115,22,0.4); color: var(--orange); }
+  .filter-tab.orange.active { background: var(--orange); color: white; border-color: var(--orange); }
+
+  .search-row { display: flex; gap: 12px; margin-bottom: 16px; align-items: center; }
+  .search-input-wrap { position: relative; flex: 1; max-width: 320px; }
+  .search-input-wrap input { padding-left: 34px; }
+  .search-icon { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: var(--text-3); font-size: 14px; pointer-events: none; }
+  .count-label { font-size: 13px; color: var(--text-2); margin-left: auto; }
+
+  .restock-btn { padding: 5px 12px; font-size: 12px; border-radius: var(--radius-sm); background: var(--bg-4); border: 1px solid var(--border-2); color: var(--text-2); text-decoration: none; font-weight: 600; transition: all 0.15s; }
+  .restock-btn:hover { background: var(--blue); color: white; border-color: var(--blue); }
+</style>
+{% endblock %}
+
+{% block topbar_actions %}
+<a href="{{ url_for('add_purchase') }}" class="btn btn-primary">+ Record Purchase</a>
+<a href="{{ url_for('add_sale') }}"     class="btn btn-accent">+ Record Sale</a>
+{% endblock %}
+
+{% block content %}
+
+{% set out_of_stock = inventory | selectattr('current_stock', 'equalto', 0) | list %}
+{% set low = inventory | selectattr('current_stock', 'gt', 0) | selectattr('current_stock', 'lt', 10) | list %}
+{% set ok  = inventory | selectattr('current_stock', 'ge', 10) | list %}
+{% set total_stock_val = inventory | sum(attribute='current_stock') %}
+{% set total_purchased = inventory | sum(attribute='total_purchased') %}
+{% set total_sold      = inventory | sum(attribute='total_sold') %}
+
+<!-- Stats Row -->
+<div class="inv-stats">
+  <div class="inv-stat" style="border-left:3px solid var(--blue)">
+    <div class="inv-stat-value" style="color:var(--blue)">{{ inventory|length }}</div>
+    <div class="inv-stat-label">Total Products</div>
+    <div class="inv-stat-sub">across all categories</div>
+  </div>
+  <div class="inv-stat" style="border-left:3px solid var(--green)">
+    <div class="inv-stat-value" style="color:var(--green)">{{ ok|length }}</div>
+    <div class="inv-stat-label">Well Stocked</div>
+    <div class="inv-stat-sub">10+ units available</div>
+  </div>
+  <div class="inv-stat" style="border-left:3px solid var(--orange)">
+    <div class="inv-stat-value" style="color:var(--orange)">{{ low|length }}</div>
+    <div class="inv-stat-label">Low Stock</div>
+    <div class="inv-stat-sub">1–9 units remaining</div>
+  </div>
+  <div class="inv-stat" style="border-left:3px solid var(--red)">
+    <div class="inv-stat-value" style="color:var(--red)">{{ out_of_stock|length }}</div>
+    <div class="inv-stat-label">Out of Stock</div>
+    <div class="inv-stat-sub">0 units — needs restock</div>
+  </div>
+</div>
+
+<!-- Low Stock Banner -->
+{% if low_stock %}
+<div class="low-stock-banner">
+  <div class="banner-icon">⚠️</div>
+  <div class="banner-text">
+    <strong>{{ low_stock|length }} product{{ 's' if low_stock|length != 1 }} need restocking</strong>
+    <p>These items are below the minimum threshold of 10 units. View: <code style="font-size:11px; background:rgba(239,68,68,0.15); padding:1px 6px; border-radius:3px;">LowStockProducts</code></p>
+  </div>
+  <div class="banner-actions">
+    <a href="{{ url_for('add_purchase') }}" class="btn btn-primary" style="font-size:13px; padding:8px 16px;">+ Restock Now</a>
+  </div>
+</div>
+{% endif %}
+
+<!-- Filter Tabs -->
+<div class="filter-tabs">
+  <div class="filter-tab active" onclick="filterRows('all', this)">All Products ({{ inventory|length }})</div>
+  <div class="filter-tab red"    onclick="filterRows('out',  this)">Out of Stock ({{ out_of_stock|length }})</div>
+  <div class="filter-tab orange" onclick="filterRows('low',  this)">Low Stock ({{ low|length }})</div>
+  <div class="filter-tab"       onclick="filterRows('ok',   this)">Well Stocked ({{ ok|length }})</div>
+</div>
+
+<!-- Search -->
+<div class="search-row">
+  <div class="search-input-wrap">
+    <span class="search-icon">🔍</span>
+    <input type="text" class="form-input" id="inventorySearch" placeholder="Search by product name…" oninput="searchInventory()">
+  </div>
+  <span class="count-label" id="rowCount">Showing {{ inventory|length }} products</span>
+</div>
+
+<!-- Inventory Summary Table -->
+<div class="card">
+  <div class="card-header">
+    <h3 class="card-title">
+      Inventory Summary
+      <span class="view-badge">VIEW: InventorySummary</span>
+    </h3>
+    <div style="font-size:12px; color:var(--text-2)">
+      Total in stock: <strong style="color:var(--text)">{{ total_stock_val }} units</strong>
+      &nbsp;·&nbsp; Purchased: <strong style="color:var(--blue)">{{ total_purchased }}</strong>
+      &nbsp;·&nbsp; Sold: <strong style="color:var(--green)">{{ total_sold }}</strong>
+    </div>
+  </div>
+  <div class="table-responsive">
+    <table class="data-table" id="inventoryTable">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Product Name</th>
+          <th>Category</th>
+          <th>Price</th>
+          <th>Purchased ↓</th>
+          <th>Sold ↑</th>
+          <th>Current Stock</th>
+          <th>Stock Level</th>
+          <th>Status</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in inventory %}
+        {% set pct = [[(row.current_stock / (row.total_purchased if row.total_purchased > 0 else 1)) * 100, 0]|max, 100]|min %}
+        <tr class="inv-row
+          {% if row.current_stock == 0 %}row-critical{% elif row.current_stock < 10 %}row-warning{% endif %}"
+          data-status="{% if row.current_stock == 0 %}out{% elif row.current_stock < 10 %}low{% else %}ok{% endif %}"
+          data-name="{{ row.product_name|lower }}">
+          <td class="text-muted">{{ loop.index }}</td>
+          <td class="td-name">{{ row.product_name }}</td>
+          <td>
+            <span class="category-badge cat-{{ row.category|lower|replace(' ','') }}">{{ row.category }}</span>
+          </td>
+          <td class="text-bold">${{ "%.2f"|format(row.price|float) }}</td>
+          <td class="flow-cell">
+            <span class="flow-in">↓ {{ row.total_purchased }}</span>
+          </td>
+          <td class="flow-cell">
+            <span class="flow-out">↑ {{ row.total_sold }}</span>
+          </td>
+          <td>
+            <span class="stock-badge
+              {% if row.current_stock == 0 %}badge-red
+              {% elif row.current_stock < 10 %}badge-orange
+              {% else %}badge-green{% endif %}">
+              {{ row.current_stock }} {{ row.unit }}
+            </span>
+          </td>
+          <td class="stock-bar-cell">
+            <div class="mini-bar-track">
+              <div class="mini-bar-fill"
+                style="width: {{ pct|int }}%;
+                       background: {% if row.current_stock == 0 %}var(--red){% elif row.current_stock < 10 %}var(--orange){% else %}var(--green){% endif %};">
+              </div>
+            </div>
+            <div style="font-size:10px; color:var(--text-3); margin-top:3px;">{{ pct|int }}% remaining</div>
+          </td>
+          <td>
+            {% if row.current_stock == 0 %}
+              <span class="status-badge status-red">Out of Stock</span>
+            {% elif row.current_stock < 5 %}
+              <span class="status-badge status-red">Critical</span>
+            {% elif row.current_stock < 10 %}
+              <span class="status-badge status-orange">Low</span>
+            {% else %}
+              <span class="status-badge status-green">OK</span>
+            {% endif %}
+          </td>
+          <td>
+            <a href="{{ url_for('add_purchase') }}" class="restock-btn">Restock</a>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="10" class="empty-state">No inventory data found.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Low Stock Detail Card -->
+{% if low_stock %}
+<div class="card">
+  <div class="card-header">
+    <h3 class="card-title" style="color:var(--orange)">
+      ⚠ Low Stock Alert
+      <span class="view-badge" style="background:rgba(249,115,22,0.1);color:var(--orange);border-color:rgba(249,115,22,0.25);">VIEW: LowStockProducts</span>
+    </h3>
+    <span class="badge">{{ low_stock|length }} items</span>
+  </div>
+  <div class="table-responsive">
+    <table class="data-table">
+      <thead>
+        <tr><th>#</th><th>Product</th><th>Category</th><th>Price</th><th>Units Left</th><th>Unit</th><th>Urgency</th><th>Action</th></tr>
+      </thead>
+      <tbody>
+        {% for item in low_stock %}
+        <tr class="{% if item.stock_quantity == 0 %}row-critical{% else %}row-warning{% endif %}">
+          <td class="text-muted">{{ loop.index }}</td>
+          <td class="td-name">{{ item.name }}</td>
+          <td><span class="category-badge cat-{{ item.category|lower|replace(' ','') }}">{{ item.category }}</span></td>
+          <td>${{ "%.2f"|format(item.price|float) }}</td>
+          <td>
+            <span class="stock-badge {% if item.stock_quantity == 0 %}badge-red{% elif item.stock_quantity <= 3 %}badge-red{% else %}badge-orange{% endif %}">
+              {{ item.stock_quantity }}
+            </span>
+          </td>
+          <td class="text-muted">{{ item.unit }}</td>
+          <td>
+            {% if item.stock_quantity == 0 %}
+              <span class="status-badge status-red">🚨 Out of Stock</span>
+            {% elif item.stock_quantity <= 3 %}
+              <span class="status-badge status-red">🔴 Critical</span>
+            {% else %}
+              <span class="status-badge status-orange">🟠 Low</span>
+            {% endif %}
+          </td>
+          <td>
+            <a href="{{ url_for('add_purchase') }}" class="btn btn-primary" style="padding:5px 14px; font-size:12px;">+ Restock</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  let activeFilter = 'all';
+
+  function filterRows(status, tabEl) {
+    activeFilter = status;
+    document.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'));
+    tabEl.classList.add('active');
+    applyFilters();
+  }
+
+  function searchInventory() { applyFilters(); }
+
+  function applyFilters() {
+    const query = document.getElementById('inventorySearch').value.toLowerCase();
+    const rows  = document.querySelectorAll('.inv-row');
+    let visible = 0;
+
+    rows.forEach(row => {
+      const name   = row.dataset.name   || '';
+      const status = row.dataset.status || '';
+      const matchesFilter = activeFilter === 'all' || status === activeFilter;
+      const matchesSearch = name.includes(query);
+
+      if (matchesFilter && matchesSearch) {
+        row.style.display = '';
+        visible++;
+      } else {
+        row.style.display = 'none';
+      }
+    });
+
+    document.getElementById('rowCount').textContent = `Showing ${visible} product${visible !== 1 ? 's' : ''}`;
+  }
+</script>
+{% endblock %}

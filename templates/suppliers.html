@@ -1,0 +1,188 @@
+{% extends "base.html" %}
+{% block title %}Suppliers – InvenTrak{% endblock %}
+{% block page_title %}Suppliers{% endblock %}
+{% block page_subtitle %}Manage your supplier network — {{ suppliers|length }} registered suppliers{% endblock %}
+
+{% block head %}
+<style>
+  .supplier-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 18px; margin-bottom: 24px; }
+  .supplier-card { background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--radius); padding: 22px; transition: transform 0.18s, box-shadow 0.18s, border-color 0.18s; cursor: default; }
+  .supplier-card:hover { transform: translateY(-2px); box-shadow: var(--shadow); border-color: var(--border-2); }
+  .supplier-card-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 14px; }
+  .supplier-avatar { width: 44px; height: 44px; border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center; font-family: var(--font-head); font-size: 18px; font-weight: 800; color: white; flex-shrink: 0; }
+  .supplier-card-actions { display: flex; gap: 6px; }
+  .supplier-name { font-family: var(--font-head); font-size: 15px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+  .supplier-contact { font-size: 12.5px; color: var(--text-2); margin-bottom: 2px; }
+  .supplier-email   { font-size: 12px; color: var(--text-3); margin-bottom: 10px; }
+  .supplier-divider { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
+  .supplier-stats { display: flex; gap: 0; }
+  .supplier-stat { flex: 1; text-align: center; }
+  .supplier-stat + .supplier-stat { border-left: 1px solid var(--border); }
+  .supplier-stat-val { font-family: var(--font-head); font-size: 17px; font-weight: 800; }
+  .supplier-stat-label { font-size: 10px; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.8px; margin-top: 2px; }
+  .view-toggle { display: flex; gap: 8px; }
+  .view-btn { padding: 7px 14px; border-radius: var(--radius-sm); border: 1px solid var(--border-2); background: var(--bg-3); color: var(--text-2); cursor: pointer; font-size: 13px; transition: all 0.15s; }
+  .view-btn.active { background: var(--blue); color: white; border-color: var(--blue); }
+  .search-bar { display: flex; gap: 12px; align-items: center; margin-bottom: 20px; }
+  .search-wrap { position: relative; flex:1; max-width: 320px; }
+  .search-wrap input { padding-left: 34px; }
+  .s-icon { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: var(--text-3); font-size: 14px; pointer-events: none; }
+  .avatar-colors { --c0:#3b82f6;--c1:#a855f7;--c2:#14b8a6;--c3:#f97316;--c4:#22c55e;--c5:#6366f1;--c6:#ef4444;--c7:#eab308; }
+</style>
+{% endblock %}
+
+{% block topbar_actions %}
+<a href="{{ url_for('add_supplier') }}" class="btn btn-primary">+ Add Supplier</a>
+{% endblock %}
+
+{% block content %}
+
+<!-- Header Controls -->
+<div class="search-bar">
+  <div class="search-wrap">
+    <span class="s-icon">🔍</span>
+    <input type="text" class="form-input" id="supplierSearch" placeholder="Search suppliers…" oninput="searchSuppliers()">
+  </div>
+  <div class="view-toggle">
+    <button class="view-btn active" onclick="setView('grid', this)" title="Card view">⊞ Cards</button>
+    <button class="view-btn"       onclick="setView('table', this)" title="Table view">≡ Table</button>
+  </div>
+  <span style="font-size:13px; color:var(--text-2); margin-left:auto;" id="supplierCount">{{ suppliers|length }} suppliers</span>
+</div>
+
+<!-- ── CARD VIEW ── -->
+<div id="gridView" class="supplier-grid avatar-colors">
+  {% set colors = ['var(--c0)','var(--c1)','var(--c2)','var(--c3)','var(--c4)','var(--c5)','var(--c6)','var(--c7)'] %}
+  {% for s in suppliers %}
+  <div class="supplier-card" data-name="{{ s.name|lower }}">
+    <div class="supplier-card-header">
+      <div style="display:flex; align-items:center; gap:12px;">
+        <div class="supplier-avatar" style="background: {{ colors[loop.index0 % 8] }};">
+          {{ s.name[0]|upper }}
+        </div>
+        <div>
+          <div class="supplier-name">{{ s.name }}</div>
+          {% if s.city %}
+          <span class="city-badge">📍 {{ s.city }}</span>
+          {% endif %}
+        </div>
+      </div>
+      <div class="supplier-card-actions">
+        <a href="{{ url_for('edit_supplier', sid=s.supplier_id) }}" class="btn-icon btn-edit" title="Edit">✎</a>
+        <form method="POST" action="{{ url_for('delete_supplier', sid=s.supplier_id) }}" style="display:inline"
+              onsubmit="return confirm('Delete {{ s.name }}? This will fail if purchase records exist.')">
+          <button type="submit" class="btn-icon btn-delete" title="Delete">✕</button>
+        </form>
+      </div>
+    </div>
+
+    <div class="supplier-contact">📞 {{ s.contact_info }}</div>
+    {% if s.email %}
+    <div class="supplier-email">✉ {{ s.email }}</div>
+    {% endif %}
+
+    <hr class="supplier-divider">
+
+    <div class="supplier-stats">
+      <div class="supplier-stat">
+        <div class="supplier-stat-val" style="color:var(--blue)">{{ s.total_orders }}</div>
+        <div class="supplier-stat-label">Orders</div>
+      </div>
+      <div class="supplier-stat">
+        <div class="supplier-stat-val" style="color:var(--purple)">{{ s.total_units_purchased or 0 }}</div>
+        <div class="supplier-stat-label">Units</div>
+      </div>
+      <div class="supplier-stat">
+        <div class="supplier-stat-val" style="color:var(--green)">${{ "%.0f"|format(s.total_value|float) }}</div>
+        <div class="supplier-stat-label">Value</div>
+      </div>
+    </div>
+  </div>
+  {% else %}
+  <div style="grid-column:1/-1; text-align:center; padding:48px; color:var(--text-3);">
+    No suppliers found. <a href="{{ url_for('add_supplier') }}" style="color:var(--blue)">Add your first supplier →</a>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- ── TABLE VIEW ── -->
+<div id="tableView" style="display:none;">
+  <div class="card">
+    <div class="card-header">
+      <h3 class="card-title">Supplier Directory <span class="badge">{{ suppliers|length }}</span></h3>
+    </div>
+    <div class="table-responsive">
+      <table class="data-table" id="supplierTable">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Supplier Name</th>
+            <th>Phone</th>
+            <th>Email</th>
+            <th>City</th>
+            <th>Orders</th>
+            <th>Units Purchased</th>
+            <th>Total Spend</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in suppliers %}
+          <tr data-name="{{ s.name|lower }}">
+            <td class="text-muted">{{ loop.index }}</td>
+            <td class="td-name">{{ s.name }}</td>
+            <td class="text-muted">{{ s.contact_info }}</td>
+            <td class="text-muted">{{ s.email or '—' }}</td>
+            <td>{% if s.city %}<span class="city-badge">{{ s.city }}</span>{% else %}—{% endif %}</td>
+            <td><span class="qty-badge" style="background:var(--blue-dim);color:var(--blue);">{{ s.total_orders }}</span></td>
+            <td>{{ s.total_units_purchased or 0 }}</td>
+            <td class="text-blue">${{ "%.2f"|format(s.total_value|float) }}</td>
+            <td class="td-actions">
+              <a href="{{ url_for('edit_supplier', sid=s.supplier_id) }}" class="btn-icon btn-edit" title="Edit">✎</a>
+              <form method="POST" action="{{ url_for('delete_supplier', sid=s.supplier_id) }}" style="display:inline"
+                    onsubmit="return confirm('Delete {{ s.name }}?')">
+                <button type="submit" class="btn-icon btn-delete" title="Delete">✕</button>
+              </form>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="9" class="empty-state">No suppliers found.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  let currentView = 'grid';
+
+  function setView(view, btn) {
+    currentView = view;
+    document.querySelectorAll('.view-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('gridView').style.display  = view === 'grid'  ? '' : 'none';
+    document.getElementById('tableView').style.display = view === 'table' ? '' : 'none';
+  }
+
+  function searchSuppliers() {
+    const query = document.getElementById('supplierSearch').value.toLowerCase();
+    let count = 0;
+
+    document.querySelectorAll('[data-name]').forEach(el => {
+      const match = (el.dataset.name || '').includes(query);
+      el.style.display = match ? '' : 'none';
+      if (match) count++;
+    });
+
+    // Dedupe count (cards + table rows both have data-name)
+    const uniq = currentView === 'grid'
+      ? document.querySelectorAll('#gridView [data-name]:not([style*="none"])').length
+      : document.querySelectorAll('#supplierTable [data-name]:not([style*="none"])').length;
+    document.getElementById('supplierCount').textContent = `${uniq} supplier${uniq !== 1 ? 's' : ''}`;
+  }
+</script>
+{% endblock %}

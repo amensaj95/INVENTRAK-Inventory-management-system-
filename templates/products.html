@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+{% block title %}Products – InvenTrak{% endblock %}
+{% block page_title %}Products{% endblock %}
+{% block page_subtitle %}Manage your product catalog{% endblock %}
+
+{% block topbar_actions %}
+<a href="{{ url_for('add_product') }}" class="btn btn-primary">+ Add Product</a>
+{% endblock %}
+
+{% block content %}
+
+<!-- Search & Filter Panel -->
+<div class="card filter-card">
+    <div class="filter-header" onclick="toggleFilters()">
+        <h3 class="card-title">🔍 Advanced Search & Filters</h3>
+        <span class="filter-toggle" id="filterToggle">▼</span>
+    </div>
+    <div class="filter-body" id="filterBody">
+        <form method="GET" action="{{ url_for('products') }}">
+            <div class="filter-grid">
+                <div class="filter-group">
+                    <label class="filter-label">Product Name</label>
+                    <input type="text" name="name" class="form-input" placeholder="Search by name..."
+                           value="{{ filters.get('name', '') }}">
+                </div>
+                <div class="filter-group">
+                    <label class="filter-label">Category</label>
+                    <select name="category" class="form-input">
+                        <option value="">All Categories</option>
+                        {% for c in categories %}
+                        <option value="{{ c.category }}" {% if filters.get('category') == c.category %}selected{% endif %}>
+                            {{ c.category }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label class="filter-label">Min Price ($)</label>
+                    <input type="number" name="min_price" class="form-input" placeholder="0"
+                           value="{{ filters.get('min_price', '') }}" step="0.01" min="0">
+                </div>
+                <div class="filter-group">
+                    <label class="filter-label">Max Price ($)</label>
+                    <input type="number" name="max_price" class="form-input" placeholder="Any"
+                           value="{{ filters.get('max_price', '') }}" step="0.01" min="0">
+                </div>
+                <div class="filter-group">
+                    <label class="filter-label">Min Stock</label>
+                    <input type="number" name="min_stock" class="form-input" placeholder="0"
+                           value="{{ filters.get('min_stock', '') }}" min="0">
+                </div>
+                <div class="filter-group">
+                    <label class="filter-label">Max Stock</label>
+                    <input type="number" name="max_stock" class="form-input" placeholder="Any"
+                           value="{{ filters.get('max_stock', '') }}" min="0">
+                </div>
+                <div class="filter-group">
+                    <label class="filter-label">Filter by Supplier</label>
+                    <select name="supplier_id" class="form-input">
+                        <option value="">All Suppliers</option>
+                        {% for s in suppliers %}
+                        <option value="{{ s.supplier_id }}" {% if filters.get('supplier_id')|string == s.supplier_id|string %}selected{% endif %}>
+                            {{ s.name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label class="filter-label">Sort By</label>
+                    <select name="sort_by" class="form-input">
+                        <option value="name" {% if filters.get('sort_by') == 'name' %}selected{% endif %}>Name A–Z</option>
+                        <option value="price_asc" {% if filters.get('sort_by') == 'price_asc' %}selected{% endif %}>Price Low–High</option>
+                        <option value="price_desc" {% if filters.get('sort_by') == 'price_desc' %}selected{% endif %}>Price High–Low</option>
+                        <option value="stock" {% if filters.get('sort_by') == 'stock' %}selected{% endif %}>Stock (Low–High)</option>
+                        <option value="total_sold" {% if filters.get('sort_by') == 'total_sold' %}selected{% endif %}>Top Selling</option>
+                        <option value="revenue" {% if filters.get('sort_by') == 'revenue' %}selected{% endif %}>Highest Revenue</option>
+                        <option value="newest" {% if filters.get('sort_by') == 'newest' %}selected{% endif %}>Newest First</option>
+                    </select>
+                </div>
+            </div>
+            <div class="filter-actions">
+                <button type="submit" class="btn btn-primary">Apply Filters</button>
+                <a href="{{ url_for('products') }}" class="btn btn-ghost">Clear All</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Products Table -->
+<div class="card">
+    <div class="card-header">
+        <h3 class="card-title">Product List <span class="badge">{{ products|length }}</span></h3>
+    </div>
+    <div class="table-responsive">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Product Name</th>
+                    <th>Category</th>
+                    <th>Price</th>
+                    <th>Stock</th>
+                    <th>Unit</th>
+                    <th>Total Sold</th>
+                    <th>Revenue</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for p in products %}
+                <tr class="{% if p.stock_quantity <= 3 %}row-critical{% elif p.stock_quantity <= 9 %}row-warning{% endif %}">
+                    <td class="text-muted">{{ loop.index }}</td>
+                    <td class="td-name">{{ p.name }}</td>
+                    <td><span class="category-badge cat-{{ p.category|lower|replace(' ','') }}">{{ p.category }}</span></td>
+                    <td class="text-bold">${{ "%.2f"|format(p.price|float) }}</td>
+                    <td>
+                        <span class="stock-badge {% if p.stock_quantity <= 3 %}badge-red{% elif p.stock_quantity <= 9 %}badge-orange{% else %}badge-green{% endif %}">
+                            {{ p.stock_quantity }} {{ p.unit }}
+                        </span>
+                    </td>
+                    <td class="text-muted">{{ p.unit }}</td>
+                    <td>{{ p.total_sold }}</td>
+                    <td class="text-green">${{ "%.2f"|format(p.revenue|float) }}</td>
+                    <td class="td-actions">
+                        <a href="{{ url_for('edit_product', pid=p.product_id) }}" class="btn-icon btn-edit" title="Edit">✎</a>
+                        <form method="POST" action="{{ url_for('delete_product', pid=p.product_id) }}" style="display:inline"
+                              onsubmit="return confirm('Delete {{ p.name }}? This cannot be undone if sales exist.')">
+                            <button type="submit" class="btn-icon btn-delete" title="Delete">✕</button>
+                        </form>
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="9" class="empty-state">No products found. Try adjusting your filters.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function toggleFilters() {
+    const body = document.getElementById('filterBody');
+    const toggle = document.getElementById('filterToggle');
+    body.classList.toggle('collapsed');
+    toggle.textContent = body.classList.contains('collapsed') ? '▶' : '▼';
+}
+// Auto-expand if filters are active
+const hasFilters = {{ 'true' if filters and (filters.get('name') or filters.get('category') or filters.get('min_price') or filters.get('max_price') or filters.get('min_stock') or filters.get('supplier_id')) else 'false' }};
+if (!hasFilters) toggleFilters();
+</script>
+{% endblock %}

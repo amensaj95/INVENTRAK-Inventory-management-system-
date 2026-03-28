@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+{% block title %}Dashboard – InvenTrak{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+{% block page_subtitle %}Real-time inventory overview{% endblock %}
+
+{% block topbar_actions %}
+<a href="{{ url_for('add_purchase') }}" class="btn btn-primary">+ Record Purchase</a>
+<a href="{{ url_for('add_sale') }}" class="btn btn-accent">+ Record Sale</a>
+{% endblock %}
+
+{% block content %}
+
+<!-- KPI Cards -->
+<div class="kpi-grid">
+    <div class="kpi-card kpi-blue">
+        <div class="kpi-icon">⬡</div>
+        <div class="kpi-info">
+            <div class="kpi-value">{{ total_products }}</div>
+            <div class="kpi-label">Total Products</div>
+        </div>
+    </div>
+    <div class="kpi-card kpi-green">
+        <div class="kpi-icon">↑</div>
+        <div class="kpi-info">
+            <div class="kpi-value">${{ "%.2f"|format(total_revenue|float) }}</div>
+            <div class="kpi-label">Total Revenue</div>
+        </div>
+    </div>
+    <div class="kpi-card kpi-purple">
+        <div class="kpi-icon">◎</div>
+        <div class="kpi-info">
+            <div class="kpi-value">{{ total_suppliers }}</div>
+            <div class="kpi-label">Suppliers</div>
+        </div>
+    </div>
+    <div class="kpi-card kpi-orange {% if low_stock_count > 0 %}kpi-alert{% endif %}">
+        <div class="kpi-icon">⚠</div>
+        <div class="kpi-info">
+            <div class="kpi-value">{{ low_stock_count }}</div>
+            <div class="kpi-label">Low Stock Items</div>
+        </div>
+    </div>
+</div>
+
+<!-- Charts Row -->
+<div class="two-col-grid">
+
+    <!-- Monthly Revenue Chart -->
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">Monthly Revenue</h3>
+            <a href="{{ url_for('reports') }}" class="card-link">Full Report →</a>
+        </div>
+        <div class="chart-container">
+            {% if monthly %}
+            <div class="bar-chart">
+                {% set max_rev = monthly | map(attribute='total_revenue') | map('float') | max %}
+                {% for row in monthly[:6] %}
+                <div class="bar-item">
+                    <div class="bar-fill" style="height: {{ ((row.total_revenue|float / max_rev) * 180)|int }}px;" title="${{ '%.0f'|format(row.total_revenue|float) }}">
+                        <span class="bar-tooltip">${{ '%.0f'|format(row.total_revenue|float) }}</span>
+                    </div>
+                    <div class="bar-label">{{ row.sale_month[5:] }}/{{ row.sale_month[:4] }}</div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="empty-state">No sales data yet.</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Top Products -->
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">Top Selling Products</h3>
+            <a href="{{ url_for('reports') }}" class="card-link">View All →</a>
+        </div>
+        <div class="top-list">
+            {% for p in top_products %}
+            <div class="top-item">
+                <div class="top-rank">#{{ loop.index }}</div>
+                <div class="top-info">
+                    <div class="top-name">{{ p.name }}</div>
+                    <div class="top-sub">{{ p.total_sold }} units sold</div>
+                </div>
+                <div class="top-value">${{ "%.0f"|format(p.revenue|float) if p.revenue else "0" }}</div>
+            </div>
+            {% else %}
+            <p class="empty-state">No sales data yet.</p>
+            {% endfor %}
+        </div>
+    </div>
+
+</div>
+
+<!-- Bottom Row -->
+<div class="two-col-grid">
+
+    <!-- Recent Sales -->
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">Recent Sales</h3>
+            <a href="{{ url_for('sales') }}" class="card-link">View All →</a>
+        </div>
+        <table class="data-table compact">
+            <thead>
+                <tr><th>Product</th><th>Qty</th><th>Total</th><th>Date</th></tr>
+            </thead>
+            <tbody>
+                {% for s in recent_sales %}
+                <tr>
+                    <td>{{ s.product_name }}</td>
+                    <td>{{ s.quantity }}</td>
+                    <td class="text-green">${{ "%.2f"|format((s.quantity * s.sale_price)|float) }}</td>
+                    <td class="text-muted">{{ s.sale_date }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="4" class="empty-state">No sales yet.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Low Stock Alerts -->
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">⚠ Low Stock Alert</h3>
+            <a href="{{ url_for('inventory') }}" class="card-link">View All →</a>
+        </div>
+        <div class="alert-list">
+            {% for item in low_stock %}
+            <div class="alert-item {% if item.stock_quantity <= 3 %}critical{% elif item.stock_quantity <= 6 %}warning{% endif %}">
+                <div class="alert-item-info">
+                    <div class="alert-item-name">{{ item.name }}</div>
+                    <div class="alert-item-cat">{{ item.category }}</div>
+                </div>
+                <div class="alert-item-stock">
+                    <span class="stock-badge {% if item.stock_quantity <= 3 %}badge-red{% elif item.stock_quantity <= 6 %}badge-orange{% else %}badge-yellow{% endif %}">
+                        {{ item.stock_quantity }} left
+                    </span>
+                </div>
+            </div>
+            {% else %}
+            <p class="empty-state">All products well stocked! ✓</p>
+            {% endfor %}
+        </div>
+    </div>
+
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Add enumerate filter support
+// (handled via Jinja2 loop.index in templates)
+</script>
+{% endblock %}
